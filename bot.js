@@ -7,11 +7,11 @@ const CONFIG = {
   BOT_TOKEN: process.env.BOT_TOKEN,
   GROQ_API_KEY: process.env.GROQ_API_KEY,
   ADMIN_CHAT_ID: process.env.ADMIN_CHAT_ID || '7826815609',
-  MODEL: process.env.MODEL || 'mixtral-8x7b-32768',
+  MODEL: process.env.MODEL || 'llama-3.3-70b-versatile',
   MAX_MESSAGE_LENGTH: parseInt(process.env.MAX_MESSAGE_LENGTH) || 4096,
   BOT_NAME: 'KhanGPT',
   CREATOR: 'Farid Ahmad Khan',
-  VERSION: '2.0.0',
+  VERSION: '2.1.0',
   PORT: process.env.PORT || 10000
 };
 
@@ -38,7 +38,14 @@ Your responses should be helpful, accurate, and engaging. Key characteristics:
 - Purpose: To assist users with intelligent, contextual conversations
 - Personality: Friendly, professional, and knowledgeable
 - When asked about your name or identity, clearly state that you are ${CONFIG.BOT_NAME}
-- Powered by Groq's fast AI infrastructure`;
+- Powered by Groq's fast AI infrastructure
+
+When providing code:
+1. Always use proper markdown code blocks with language specification
+2. Format code with proper indentation and syntax highlighting
+3. Keep code complete and runnable
+4. Add comments to explain important parts
+5. Include sample usage if applicable`;
 
 // ================= HELPER FUNCTIONS =================
 
@@ -54,7 +61,7 @@ function getUserData(userId) {
       }],
       preferences: {
         temperature: 0.7,
-        maxTokens: 1024,
+        maxTokens: 2048, // Increased for code responses
         language: 'en'
       },
       stats: {
@@ -70,6 +77,58 @@ function getUserData(userId) {
   data.stats.messageCount++;
   
   return data;
+}
+
+/**
+ * Check if message contains code request
+ */
+function isCodeRequest(message) {
+  const codeKeywords = [
+    'code', 'program', 'script', 'function', 'class', 'write a', 
+    'create a', 'implement', 'python', 'javascript', 'java', 'c++', 
+    'html', 'css', 'php', 'ruby', 'swift', 'kotlin', 'rust', 'go',
+    'algorithm', 'example', 'snippet'
+  ];
+  
+  const lowerMessage = message.toLowerCase();
+  return codeKeywords.some(keyword => lowerMessage.includes(keyword));
+}
+
+/**
+ * Format code blocks for better display
+ */
+function formatCodeBlocks(text) {
+  // Ensure code blocks have language specification
+  const codeBlockRegex = /```(\w*)\n([\s\S]*?)```/g;
+  
+  return text.replace(codeBlockRegex, (match, lang, code) => {
+    // If no language specified, try to detect or default to text
+    const language = lang || detectLanguage(code) || 'text';
+    return `\`\`\`${language}\n${code.trim()}\n\`\`\``;
+  });
+}
+
+/**
+ * Detect programming language from code
+ */
+function detectLanguage(code) {
+  const patterns = {
+    python: [/def\s+\w+\s*\(/, /import\s+\w+/, /from\s+\w+\s+import/, /print\s*\(/, /if\s+__name__\s*==\s*['"]__main__['"]/],
+    javascript: [/function\s+\w+\s*\(/, /const\s+\w+\s*=/, /let\s+\w+\s*=/, /console\.log/, /=>/, /document\./, /window\./],
+    java: [/public\s+class/, /private\s+\w+/, /System\.out\.println/, /@Override/, /import\s+java\./],
+    html: [/<html>/, /<body>/, /<div>/, /<script>/, /<!DOCTYPE\s+html>/i],
+    css: [/^\s*\.\w+\s*\{/, /^\s*#\w+\s*\{/, /^\s*@media/, /color:\s*[^;]+;/, /margin:/],
+    cpp: [/include\s*<[^>]+>/, /using namespace std/, /cout\s*<</, /cin\s*>>/, /int main\(\)/],
+    sql: [/SELECT.*FROM/i, /INSERT INTO/i, /CREATE TABLE/i, /ALTER TABLE/i]
+  };
+  
+  for (const [lang, patterns_list] of Object.entries(patterns)) {
+    if (patterns_list.some(pattern => pattern.test(code))) {
+      return lang;
+    }
+  }
+  
+  return null;
 }
 
 /**
@@ -115,8 +174,13 @@ async function getAIResponse(userMessage, userId, preferences = {}) {
       presence_penalty: 0.3,
     });
 
-    const aiReply = chatCompletion.choices[0]?.message?.content || 
+    let aiReply = chatCompletion.choices[0]?.message?.content || 
       'I apologize, but I received an empty response. Please try again.';
+
+    // Format code blocks if this is a code request
+    if (isCodeRequest(userMessage)) {
+      aiReply = formatCodeBlocks(aiReply);
+    }
 
     // Add AI's reply to history
     history.push({ role: 'assistant', content: aiReply });
@@ -203,29 +267,50 @@ function splitMessage(text, maxLength = CONFIG.MAX_MESSAGE_LENGTH) {
   if (text.length <= maxLength) return [text];
 
   const parts = [];
-  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+  
+  // Try to split by code blocks first to keep them intact
+  const codeBlockRegex = /(```[\s\S]*?```)/g;
+  const segments = text.split(codeBlockRegex);
   let currentPart = '';
 
-  for (const sentence of sentences) {
-    if (currentPart.length + sentence.length <= maxLength) {
-      currentPart += sentence;
-    } else {
-      if (currentPart) parts.push(currentPart.trim());
-      
-      // If a single sentence is too long, split by words
-      if (sentence.length > maxLength) {
-        const words = sentence.split(' ');
-        currentPart = '';
-        for (const word of words) {
-          if (currentPart.length + word.length + 1 <= maxLength) {
-            currentPart += (currentPart ? ' ' : '') + word;
-          } else {
-            if (currentPart) parts.push(currentPart);
-            currentPart = word;
-          }
-        }
+  for (const segment of segments) {
+    // If it's a code block, handle specially
+    if (segment.startsWith('```') && segment.endsWith('```')) {
+      if (currentPart.length + segment.length <= maxLength) {
+        currentPart += segment;
       } else {
-        currentPart = sentence;
+        if (currentPart) parts.push(currentPart);
+        // If code block itself is too long, we have to split it (unfortunate but necessary)
+        if (segment.length > maxLength) {
+          const codeLines = segment.split('\n');
+          let tempCode = '';
+          for (const line of codeLines) {
+            if (tempCode.length + line.length + 1 <= maxLength - 6) { // Reserve space for ``` markers
+              tempCode += line + '\n';
+            } else {
+              if (tempCode) {
+                parts.push('```\n' + tempCode + '```');
+              }
+              tempCode = line + '\n';
+            }
+          }
+          if (tempCode) {
+            parts.push('```\n' + tempCode + '```');
+          }
+        } else {
+          currentPart = segment;
+        }
+      }
+    } else {
+      // Regular text - split by sentences
+      const sentences = segment.match(/[^.!?]+[.!?]+/g) || [segment];
+      for (const sentence of sentences) {
+        if (currentPart.length + sentence.length <= maxLength) {
+          currentPart += sentence;
+        } else {
+          if (currentPart) parts.push(currentPart.trim());
+          currentPart = sentence;
+        }
       }
     }
   }
@@ -234,7 +319,7 @@ function splitMessage(text, maxLength = CONFIG.MAX_MESSAGE_LENGTH) {
   
   // Add continuation indicator
   return parts.map((part, index) => 
-    `${part}${index < parts.length - 1 ? ' (continued...)' : ''}`
+    `${part}${index < parts.length - 1 ? '\n\n_[continued...]_' : ''}`
   );
 }
 
@@ -270,6 +355,7 @@ I'm your advanced AI assistant, created by ${CONFIG.CREATOR} to provide intellig
 
 ✨ **Features:**
 • Natural conversations with context memory
+• **Code formatting with syntax highlighting** ✨
 • Customizable responses via /settings
 • Personal stats tracking via /stats
 • Multiple AI models via /model
@@ -283,7 +369,11 @@ I'm your advanced AI assistant, created by ${CONFIG.CREATOR} to provide intellig
 /stats - Your usage stats
 /settings - Customize experience
 
-Just send a message to start chatting!`;
+💻 **Code Examples:**
+Just ask for code in any language - it will be beautifully formatted!
+Example: "Write a Python function to calculate fibonacci"
+
+Send a message to start chatting!`;
 
   await ctx.reply(welcome, { parse_mode: 'Markdown' });
   await notifyAdmin(ctx, 'new_user');
@@ -308,11 +398,17 @@ bot.help((ctx) => {
 /model - Change AI model
 /settings - Customize responses
 
+**Code Features:**
+• Ask for code in any language
+• Receive formatted code blocks with syntax highlighting
+• Code is easily copyable
+• Language auto-detection
+
 **Tips:**
 • Ask me about my name or creator
-• I remember context from our conversation
+• Request code like "Write a Python script for..."
+• Code blocks are copyable with one click
 • Use /clear to start fresh anytime
-• Long responses are split automatically
 
 Need help? Just ask! 🤖
   `;
@@ -344,6 +440,7 @@ bot.command('about', (ctx) => {
 
 **Capabilities:**
 • Contextual conversations
+• **Code formatting with syntax highlighting** ✨
 • Multiple language support
 • User preference memory
 • Smart response formatting
@@ -351,8 +448,8 @@ bot.command('about', (ctx) => {
 
 **Features:**
 • Message history: 15-20 exchanges
-• Response length: Up to 1024 tokens
-• Temperature: Adjustable via /settings
+• Response length: Up to 2048 tokens
+• Code auto-detection and formatting
 • Admin notifications active
 
 **Links:**
@@ -368,9 +465,10 @@ Type /help for all commands! 🚀
 // /model command with selection
 bot.command('model', (ctx) => {
   const models = [
-    { name: 'Mixtral 8x7B', id: 'mixtral-8x7b-32768', desc: 'Best for complex tasks' },
-    { name: 'Llama 3 8B', id: 'llama3-8b-8192', desc: 'Fast and efficient' },
-    { name: 'Llama 2 70B', id: 'llama2-70b-4096', desc: 'Most powerful' }
+    { name: 'Llama 3.3 70B (Versatile)', id: 'llama-3.3-70b-versatile', desc: 'Latest, most powerful' },
+    { name: 'Llama 3.3 70B (Fast)', id: 'llama-3.3-70b-specdec', desc: 'Fastest inference' },
+    { name: 'Llama 3.1 70B', id: 'llama-3.1-70b-versatile', desc: 'Great all-rounder' },
+    { name: 'Llama 3.1 8B', id: 'llama-3.1-8b-instant', desc: 'Fast and efficient' }
   ];
   
   const modelList = models.map(m => 
@@ -390,15 +488,21 @@ bot.command('setmodel', (ctx) => {
   const args = ctx.message.text.split(' ')[1];
   
   if (!args) {
-    return ctx.reply('Please specify a model ID. Example: `/setmodel llama3-8b-8192`', 
+    return ctx.reply('Please specify a model ID. Example: `/setmodel llama-3.3-70b-versatile`', 
       { parse_mode: 'Markdown' });
   }
   
-  const validModels = ['mixtral-8x7b-32768', 'llama3-8b-8192', 'llama2-70b-4096'];
+  const validModels = [
+    'llama-3.3-70b-versatile',
+    'llama-3.3-70b-specdec',
+    'llama-3.1-70b-versatile',
+    'llama-3.1-8b-instant'
+  ];
   
   if (validModels.includes(args)) {
     CONFIG.MODEL = args;
-    ctx.reply(`✅ Model changed to \`${args}\` successfully!`, { parse_mode: 'Markdown' });
+    ctx.reply(`✅ Model changed to \`${args}\` successfully!\n\nYour code responses will now use this model.`, 
+      { parse_mode: 'Markdown' });
   } else {
     ctx.reply('❌ Invalid model ID. Use /model to see available models.');
   }
@@ -422,10 +526,11 @@ bot.command('settings', (ctx) => {
 • Temperature: ${prefs.temperature} (creativity)
 • Max tokens: ${prefs.maxTokens} (response length)
 • Language: ${prefs.language}
+• **Code Formatting:** ✅ Enabled
 
 **Commands to adjust:**
 /settemp <0.1-1.5> - Change creativity
-/settokens <100-2048> - Change max tokens
+/settokens <100-4096> - Change max tokens
   `;
   
   ctx.reply(settings, { parse_mode: 'Markdown' });
@@ -449,8 +554,8 @@ bot.command('settemp', (ctx) => {
 bot.command('settokens', (ctx) => {
   const args = parseInt(ctx.message.text.split(' ')[1]);
   
-  if (isNaN(args) || args < 100 || args > 2048) {
-    return ctx.reply('❌ Please provide valid token count between 100 and 2048');
+  if (isNaN(args) || args < 100 || args > 4096) {
+    return ctx.reply('❌ Please provide valid token count between 100 and 4096');
   }
   
   const user = getUserData(ctx.from.id);
@@ -472,6 +577,20 @@ bot.command('history', (ctx) => {
     `_Use /clear to reset_`,
     { parse_mode: 'Markdown' }
   );
+});
+
+// /code command - explicit code request handler
+bot.command('code', (ctx) => {
+  const query = ctx.message.text.replace('/code', '').trim();
+  if (!query) {
+    return ctx.reply('Please specify what code you want. Example: `/code python fibonacci function`', 
+      { parse_mode: 'Markdown' });
+  }
+  
+  // Process as a code request
+  ctx.message.text = `Write code: ${query}`;
+  // Let the message handler take over
+  bot.handleUpdate(ctx.update);
 });
 
 // ================= MESSAGE HANDLING =================
@@ -501,7 +620,7 @@ bot.on('text', async (ctx) => {
   
   for (let i = 0; i < messageParts.length; i++) {
     if (i > 0) await ctx.sendChatAction('typing');
-    await ctx.reply(messageParts[i]);
+    await ctx.reply(messageParts[i], { parse_mode: 'Markdown' });
   }
 });
 
@@ -511,14 +630,14 @@ bot.on(['photo', 'video', 'document', 'voice', 'sticker'], async (ctx) => {
   const user = getUserData(ctx.from.id);
   
   const responses = {
-    photo: "📸 I see you've shared a photo! While I can't view images directly, I can discuss it if you describe it.",
-    video: "🎥 Thanks for sharing a video! Tell me what it's about and I'll help.",
-    document: "📄 Document received. Describe its contents and I'll assist!",
-    voice: "🎤 I received a voice message. Currently I can only process text, but feel free to type your message!",
-    sticker: "😊 Nice sticker! How can I help you today?"
+    photo: "📸 I see you've shared a photo! While I can't view images directly, I can discuss it if you describe it. Need code? Just ask!",
+    video: "🎥 Thanks for sharing a video! Tell me what it's about and I'll help. I can also write code for you if needed.",
+    document: "📄 Document received. Describe its contents and I'll assist! I'm particularly good at reading and explaining code files.",
+    voice: "🎤 I received a voice message. Currently I can only process text, but feel free to type your message! I can help with code.",
+    sticker: "😊 Nice sticker! Need help with some code? Just ask!"
   };
   
-  await ctx.reply(responses[mediaType] || `📁 I received your ${mediaType}. Please send text messages for AI assistance.`);
+  await ctx.reply(responses[mediaType] || `📁 I received your ${mediaType}. Please send text messages for AI assistance, especially for code requests.`);
 
   // Notify admin
   await notifyAdmin(ctx, 'message', { 
@@ -529,11 +648,25 @@ bot.on(['photo', 'video', 'document', 'voice', 'sticker'], async (ctx) => {
 
 // Handle commands for bot identity questions
 bot.hears(/.*(your name|who are you|what is your name).*/i, (ctx) => {
-  ctx.reply(`My name is ${CONFIG.BOT_NAME}! I'm an AI assistant created by ${CONFIG.CREATOR} to help you with intelligent conversations. How can I assist you today? 🤖`);
+  ctx.reply(`My name is ${CONFIG.BOT_NAME}! I'm an AI assistant created by ${CONFIG.CREATOR} to help you with intelligent conversations and **code generation**. Need a Python script? Just ask! 🤖`, 
+    { parse_mode: 'Markdown' });
 });
 
 bot.hears(/.*(who created you|your creator).*/i, (ctx) => {
-  ctx.reply(`I was created by ${CONFIG.CREATOR}, a skilled developer specializing in AI solutions. ${CONFIG.BOT_NAME} is designed to provide fast, helpful responses using Groq's cutting-edge AI technology! 🚀`);
+  ctx.reply(`I was created by ${CONFIG.CREATOR}, a skilled developer specializing in AI solutions. ${CONFIG.BOT_NAME} is designed to provide fast, helpful responses using Groq's cutting-edge AI technology - including **beautifully formatted code**! 🚀`, 
+    { parse_mode: 'Markdown' });
+});
+
+// Handle explicit code requests
+bot.hears(/^(python|javascript|java|cpp|html|css|php|ruby|go|rust|swift|kotlin)\s+code\s+for\s+(.+)/i, async (ctx) => {
+  const matches = ctx.message.text.match(/^(\w+)\s+code\s+for\s+(.+)/i);
+  if (matches) {
+    const language = matches[1];
+    const query = matches[2];
+    ctx.message.text = `Write a ${language} program for ${query}`;
+    // Let the message handler take over
+    bot.handleUpdate(ctx.update);
+  }
 });
 
 // ================= ERROR HANDLING =================
@@ -562,13 +695,18 @@ app.get('/', (req, res) => {
           h1 { font-size: 3em; margin-bottom: 20px; }
           .status { background: rgba(255,255,255,0.2); padding: 20px; border-radius: 10px; margin: 20px 0; }
           .badge { background: #4CAF50; color: white; padding: 5px 15px; border-radius: 20px; display: inline-block; }
+          .code-badge { background: #FF6B6B; color: white; padding: 5px 15px; border-radius: 20px; display: inline-block; margin-left: 10px; }
           .footer { margin-top: 50px; font-size: 0.9em; opacity: 0.8; }
+          pre { background: #2d2d2d; color: #f8f8f2; padding: 15px; border-radius: 5px; text-align: left; overflow-x: auto; }
         </style>
       </head>
       <body>
         <div class="container">
           <h1>🤖 ${CONFIG.BOT_NAME}</h1>
-          <div class="badge">🟢 Online</div>
+          <div>
+            <span class="badge">🟢 Online</span>
+            <span class="code-badge">✨ Code Formatter</span>
+          </div>
           <div class="status">
             <p><strong>Version:</strong> ${CONFIG.VERSION}</p>
             <p><strong>Model:</strong> ${CONFIG.MODEL}</p>
@@ -576,9 +714,11 @@ app.get('/', (req, res) => {
             <p><strong>Users:</strong> ${userData.size}</p>
             <p><strong>Uptime:</strong> ${Math.floor(process.uptime() / 60)} minutes</p>
           </div>
-          <p>Bot is running and ready to handle messages!</p>
+          <p>Bot is running and ready to handle messages with <strong>beautiful code formatting!</strong></p>
+          <p>Try asking: <em>"Write a Python function to calculate fibonacci"</em></p>
           <div class="footer">
             <p>Powered by Groq AI | Made with ❤️ by ${CONFIG.CREATOR}</p>
+            <p><small>Code blocks are automatically formatted with syntax highlighting</small></p>
           </div>
         </div>
       </body>
@@ -593,7 +733,8 @@ app.get('/health', (req, res) => {
     users: userData.size,
     uptime: process.uptime(),
     memory: process.memoryUsage(),
-    model: CONFIG.MODEL
+    model: CONFIG.MODEL,
+    features: ['code-formatting', 'syntax-highlighting', 'markdown']
   });
 });
 
@@ -602,20 +743,21 @@ app.get('/health', (req, res) => {
 // Start express server
 app.listen(CONFIG.PORT, '0.0.0.0', () => {
   console.log(`
-╔════════════════════════════════════════╗
-║   🚀 ${CONFIG.BOT_NAME} v${CONFIG.VERSION}              ║
-╠════════════════════════════════════════╣
-║ Web Server: http://localhost:${CONFIG.PORT}     ║
-║ Model: ${CONFIG.MODEL}                 ║
-║ Creator: ${CONFIG.CREATOR}                      ║
-║ Status: ✅ Online                         ║
-╚════════════════════════════════════════╝
+╔══════════════════════════════════════════════╗
+║   🚀 ${CONFIG.BOT_NAME} v${CONFIG.VERSION}                    ║
+╠══════════════════════════════════════════════╣
+║ Web Server: http://localhost:${CONFIG.PORT}           ║
+║ Model: ${CONFIG.MODEL}        ║
+║ Creator: ${CONFIG.CREATOR}                            ║
+║ Status: ✅ Online                                   ║
+║ Features: ✨ Code Formatting Enabled                  ║
+╚══════════════════════════════════════════════╝
   `);
   
   // Launch the bot
   bot.launch()
     .then(() => {
-      console.log(`✅ ${CONFIG.BOT_NAME} is running!`);
+      console.log(`✅ ${CONFIG.BOT_NAME} is running with code formatting!`);
       
       // Send startup notification
       bot.telegram.sendMessage(
@@ -625,7 +767,9 @@ app.listen(CONFIG.PORT, '0.0.0.0', () => {
         `• Model: ${CONFIG.MODEL}\n` +
         `• Port: ${CONFIG.PORT}\n` +
         `• Users: ${userData.size}\n` +
-        `• Status: ✅ Online`,
+        `• Status: ✅ Online\n` +
+        `• Features: ✨ Code Formatting\n\n` +
+        `Code responses will now be beautifully formatted with syntax highlighting!`,
         { parse_mode: 'Markdown' }
       ).catch(console.error);
     })
