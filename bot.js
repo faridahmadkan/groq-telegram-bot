@@ -1,21 +1,25 @@
 import { Telegraf } from 'telegraf';
 import Groq from 'groq-sdk';
+import express from 'express';
 
 // ================= CONFIGURATION =================
 const CONFIG = {
   BOT_TOKEN: process.env.BOT_TOKEN,
   GROQ_API_KEY: process.env.GROQ_API_KEY,
   ADMIN_CHAT_ID: process.env.ADMIN_CHAT_ID || '7826815609',
-  MODEL: 'mixtral-8x7b-32768',
-  MAX_MESSAGE_LENGTH: 4096,
+  MODEL: process.env.MODEL || 'mixtral-8x7b-32768',
+  MAX_MESSAGE_LENGTH: parseInt(process.env.MAX_MESSAGE_LENGTH) || 4096,
   BOT_NAME: 'KhanGPT',
   CREATOR: 'Farid Ahmad Khan',
-  VERSION: '2.0.0'
+  VERSION: '2.0.0',
+  PORT: process.env.PORT || 10000
 };
 
 // Validate required environment variables
 if (!CONFIG.BOT_TOKEN || !CONFIG.GROQ_API_KEY) {
-  console.error('Missing required environment variables!');
+  console.error('❌ Missing required environment variables!');
+  console.error('BOT_TOKEN:', CONFIG.BOT_TOKEN ? '✓ Present' : '✗ Missing');
+  console.error('GROQ_API_KEY:', CONFIG.GROQ_API_KEY ? '✓ Present' : '✗ Missing');
   process.exit(1);
 }
 
@@ -303,7 +307,6 @@ bot.help((ctx) => {
 **Settings:**
 /model - Change AI model
 /settings - Customize responses
-/language - Change response language
 
 **Tips:**
 • Ask me about my name or creator
@@ -355,7 +358,6 @@ bot.command('about', (ctx) => {
 **Links:**
 Creator: @faridahmadkhan
 Version: ${CONFIG.VERSION}
-Last update: January 2024
 
 Type /help for all commands! 🚀
   `;
@@ -424,7 +426,6 @@ bot.command('settings', (ctx) => {
 **Commands to adjust:**
 /settemp <0.1-1.5> - Change creativity
 /settokens <100-2048> - Change max tokens
-/language <en/es/fr> - Change language
   `;
   
   ctx.reply(settings, { parse_mode: 'Markdown' });
@@ -546,50 +547,69 @@ bot.catch(async (err, ctx) => {
   await notifyAdmin(ctx, 'error', { error: err.message }).catch(() => {});
 });
 
-// ================= START BOT =================
+// ================= EXPRESS SERVER FOR RENDER =================
 
-const PORT = process.env.PORT || 3000;
-const express = require('express');
 const app = express();
 
 app.get('/', (req, res) => {
   res.send(`
     <html>
-      <head><title>${CONFIG.BOT_NAME}</title></head>
-      <body style="font-family: Arial; text-align: center; padding: 50px;">
-        <h1>🤖 ${CONFIG.BOT_NAME} is Running!</h1>
-        <p>Version: ${CONFIG.VERSION}</p>
-        <p>Model: ${CONFIG.MODEL}</p>
-        <p>Created by: ${CONFIG.CREATOR}</p>
-        <p>Status: 🟢 Online</p>
-        <p>Users: ${userData.size}</p>
-        <small>Powered by Groq AI</small>
+      <head>
+        <title>${CONFIG.BOT_NAME}</title>
+        <style>
+          body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+          .container { max-width: 800px; margin: 0 auto; }
+          h1 { font-size: 3em; margin-bottom: 20px; }
+          .status { background: rgba(255,255,255,0.2); padding: 20px; border-radius: 10px; margin: 20px 0; }
+          .badge { background: #4CAF50; color: white; padding: 5px 15px; border-radius: 20px; display: inline-block; }
+          .footer { margin-top: 50px; font-size: 0.9em; opacity: 0.8; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <h1>🤖 ${CONFIG.BOT_NAME}</h1>
+          <div class="badge">🟢 Online</div>
+          <div class="status">
+            <p><strong>Version:</strong> ${CONFIG.VERSION}</p>
+            <p><strong>Model:</strong> ${CONFIG.MODEL}</p>
+            <p><strong>Creator:</strong> ${CONFIG.CREATOR}</p>
+            <p><strong>Users:</strong> ${userData.size}</p>
+            <p><strong>Uptime:</strong> ${Math.floor(process.uptime() / 60)} minutes</p>
+          </div>
+          <p>Bot is running and ready to handle messages!</p>
+          <div class="footer">
+            <p>Powered by Groq AI | Made with ❤️ by ${CONFIG.CREATOR}</p>
+          </div>
+        </div>
       </body>
     </html>
   `);
 });
 
-app.get('/stats', (req, res) => {
+app.get('/health', (req, res) => {
   res.json({
-    botName: CONFIG.BOT_NAME,
+    status: 'healthy',
     version: CONFIG.VERSION,
-    model: CONFIG.MODEL,
     users: userData.size,
     uptime: process.uptime(),
-    memory: process.memoryUsage()
+    memory: process.memoryUsage(),
+    model: CONFIG.MODEL
   });
 });
 
-app.listen(PORT, () => {
+// ================= START BOT AND SERVER =================
+
+// Start express server
+app.listen(CONFIG.PORT, '0.0.0.0', () => {
   console.log(`
-╔═══════════════════════════════════╗
-║   🚀 ${CONFIG.BOT_NAME} v${CONFIG.VERSION}          ║
-╠═══════════════════════════════════╣
-║ Web Server: http://localhost:${PORT}  ║
-║ Model: ${CONFIG.MODEL}          ║
-║ Creator: ${CONFIG.CREATOR}              ║
-║ Status: ✅ Online                     ║
-╚═══════════════════════════════════╝
+╔════════════════════════════════════════╗
+║   🚀 ${CONFIG.BOT_NAME} v${CONFIG.VERSION}              ║
+╠════════════════════════════════════════╣
+║ Web Server: http://localhost:${CONFIG.PORT}     ║
+║ Model: ${CONFIG.MODEL}                 ║
+║ Creator: ${CONFIG.CREATOR}                      ║
+║ Status: ✅ Online                         ║
+╚════════════════════════════════════════╝
   `);
   
   // Launch the bot
@@ -603,8 +623,9 @@ app.listen(PORT, () => {
         `🤖 **${CONFIG.BOT_NAME} v${CONFIG.VERSION}** started successfully at ${new Date().toLocaleString()}\n\n` +
         `📊 **Stats:**\n` +
         `• Model: ${CONFIG.MODEL}\n` +
-        `• Port: ${PORT}\n` +
-        `• Users: ${userData.size}`,
+        `• Port: ${CONFIG.PORT}\n` +
+        `• Users: ${userData.size}\n` +
+        `• Status: ✅ Online`,
         { parse_mode: 'Markdown' }
       ).catch(console.error);
     })

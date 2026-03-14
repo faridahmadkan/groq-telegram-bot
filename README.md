@@ -1,4 +1,3 @@
-cat > README.md << 'EOF'
 # 🤖 Groq-Telegram Bot - KhanGPT
 
 An advanced Telegram bot powered by Groq's fast AI infrastructure, featuring custom identity as "KhanGPT" created by Farid Ahmad Khan.
@@ -11,7 +10,7 @@ An advanced Telegram bot powered by Groq's fast AI infrastructure, featuring cus
 - **Conversation Memory**: Smart context management
 - **Personal Stats**: Track your usage and conversation history
 - **Admin Dashboard**: Monitor user activity and errors
-- **Web Interface**: Status page and API endpoint
+- **Web Interface**: Status page and health endpoint
 
 ## 📋 Commands
 

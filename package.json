@@ -1,10 +1,9 @@
-# Update package.json with proper info
-cat > package.json << 'EOF'
 {
   "name": "groq-telegram-bot",
   "version": "2.0.0",
   "description": "Advanced Telegram bot powered by Groq AI with KhanGPT identity",
   "main": "bot.js",
+  "type": "module",
   "scripts": {
     "start": "node bot.js",
     "dev": "nodemon bot.js"
@@ -29,21 +28,5 @@ cat > package.json << 'EOF'
   },
   "engines": {
     "node": ">=18.0.0"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/YOUR_USERNAME/groq-telegram-bot.git"
-  },
-  "bugs": {
-    "url": "https://github.com/YOUR_USERNAME/groq-telegram-bot/issues"
-  },
-  "homepage": "https://github.com/YOUR_USERNAME/groq-telegram-bot#readme"
+  }
 }
-EOF
-
-# Add updated package.json
-git add package.json
-
-# Final commit and push
-git commit -m "Update package.json with repository info"
-git push
