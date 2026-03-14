@@ -1,16 +1,36 @@
-# Groq Telegram Bot
+cat > README.md << 'EOF'
+# 🤖 Groq-Telegram Bot - KhanGPT
 
-A Telegram bot powered by Groq's fast AI models.
+An advanced Telegram bot powered by Groq's fast AI infrastructure, featuring custom identity as "KhanGPT" created by Farid Ahmad Khan.
 
-## Features
-- AI-powered conversations using Groq API
-- Conversation history (last 5 exchanges)
-- Admin notifications
-- 24/7 hosting on Render
+## 🚀 Features
 
-## Commands
-- `/start` - Welcome message
-- `/help` - Show help
-- `/clear` - Clear conversation history
-- `/about` - Bot info
-- `/model` - Show current AI model
+- **Custom Identity**: Responds as "KhanGPT" when asked about its name
+- **Multi-Model Support**: Switch between different AI models
+- **User Preferences**: Adjustable temperature and response length
+- **Conversation Memory**: Smart context management
+- **Personal Stats**: Track your usage and conversation history
+- **Admin Dashboard**: Monitor user activity and errors
+- **Web Interface**: Status page and API endpoint
+
+## 📋 Commands
+
+| Command | Description |
+|---------|-------------|
+| `/start` | Start the bot |
+| `/help` | Show all commands |
+| `/about` | About KhanGPT |
+| `/clear` | Reset conversation |
+| `/stats` | View your stats |
+| `/model` | Show current model |
+| `/setmodel` | Change AI model |
+| `/settings` | View preferences |
+| `/settemp` | Adjust creativity |
+| `/settokens` | Change max tokens |
+| `/history` | Conversation summary |
+
+## 🛠️ Setup
+
+1. Clone the repository
+2. Install dependencies: `npm install`
+3. Create `.env` file with:

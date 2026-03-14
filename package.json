@@ -1,22 +1,49 @@
+# Update package.json with proper info
+cat > package.json << 'EOF'
 {
   "name": "groq-telegram-bot",
-  "version": "1.0.0",
-  "description": "Telegram bot powered by Groq AI",
-  "main": "index.js",
-  "type": "module",
+  "version": "2.0.0",
+  "description": "Advanced Telegram bot powered by Groq AI with KhanGPT identity",
+  "main": "bot.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js"
+    "start": "node bot.js",
+    "dev": "nodemon bot.js"
   },
+  "keywords": [
+    "telegram",
+    "bot",
+    "groq",
+    "ai",
+    "khan-gpt",
+    "chatbot"
+  ],
+  "author": "Farid Ahmad Khan",
+  "license": "MIT",
   "dependencies": {
-    "express": "^4.18.2",
-    "groq-sdk": "^0.3.0",
-    "telegraf": "^4.12.0"
+    "telegraf": "^4.15.3",
+    "groq-sdk": "^0.3.2",
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
   },
   "engines": {
     "node": ">=18.0.0"
   },
-  "keywords": ["telegram", "bot", "groq", "ai"],
-  "author": "Farid Ahmad Khan",
-  "license": "MIT"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YOUR_USERNAME/groq-telegram-bot.git"
+  },
+  "bugs": {
+    "url": "https://github.com/YOUR_USERNAME/groq-telegram-bot/issues"
+  },
+  "homepage": "https://github.com/YOUR_USERNAME/groq-telegram-bot#readme"
 }
+EOF
+
+# Add updated package.json
+git add package.json
+
+# Final commit and push
+git commit -m "Update package.json with repository info"
+git push
